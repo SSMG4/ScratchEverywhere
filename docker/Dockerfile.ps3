@@ -34,7 +34,7 @@ ENV PATH=$PS3DEV/ppu/bin:$PS3DEV/spu/bin:$PS3DEV/host/bin:$PATH
 
 RUN mkdir -p $PS3DEV/ppu $PS3DEV/spu $PS3DEV/host/bin
 
-ENV TARGET_PPU=powerpc64-ps3-elf
+ENV TARGET_PPU=powerpc64-unknown-elf
 ENV TARGET_SPU=spu-elf
 ENV BINUTILS_VER=2.40
 ENV GCC_VER=13.2.0

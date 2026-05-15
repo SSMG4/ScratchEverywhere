@@ -22,7 +22,7 @@ set(CMAKE_CROSSCOMPILING TRUE)
 set(CMAKE_SYSTEM_VERSION 1)
 
 set(TOOLCHAIN_BIN "${PS3DEV}/ppu/bin")
-set(TOOLCHAIN_PREFIX "${TOOLCHAIN_BIN}/powerpc64-ps3-elf")
+set(TOOLCHAIN_PREFIX "${TOOLCHAIN_BIN}/powerpc64-unknown-elf")
 
 set(CMAKE_C_COMPILER   "${TOOLCHAIN_PREFIX}-gcc"   CACHE PATH "")
 set(CMAKE_CXX_COMPILER "${TOOLCHAIN_PREFIX}-g++"   CACHE PATH "")
@@ -44,13 +44,13 @@ set(CMAKE_C_FLAGS_INIT
     "${PS3_ARCH_FLAGS} \
      -D__PS3__ -D__PSL1GHT__ -DPS3 \
      -I${PSL1GHT}/ppu/include \
-     -I${PS3DEV}/ppu/powerpc64-ps3-elf/include"
+     -I${PS3DEV}/ppu/powerpc64-unknown-elf/include"
 )
 set(CMAKE_CXX_FLAGS_INIT "${CMAKE_C_FLAGS_INIT}")
 
 set(CMAKE_EXE_LINKER_FLAGS_INIT
     "-L${PSL1GHT}/ppu/lib \
-     -L${PS3DEV}/ppu/powerpc64-ps3-elf/lib \
+     -L${PS3DEV}/ppu/powerpc64-unknown-elf/lib \
      -Wl,--gc-sections"
 )
 
