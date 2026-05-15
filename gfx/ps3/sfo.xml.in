@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<sfoxml param_version="0100">
+    <ATTRIBUTE fmt="Integer">0</ATTRIBUTE>
+    <BOOTABLE fmt="Integer">1</BOOTABLE>
+    <CATEGORY fmt="String" max_len="4">HG</CATEGORY>
+    <LICENSE fmt="String" max_len="128"></LICENSE>
+    <PS3_SYSTEM_VER fmt="String" max_len="8">01.0000</PS3_SYSTEM_VER>
+    <RESOLUTION fmt="Integer">63</RESOLUTION>
+    <SOUND_FORMAT fmt="Integer">279</SOUND_FORMAT>
+    <TITLE fmt="String" max_len="128">@SE_APP_NAME@</TITLE>
+    <TITLE_ID fmt="String" max_len="10">@SE_APP_TITLEID@</TITLE_ID>
+    <VERSION fmt="String" max_len="8">@SE_APP_VER_PAD@</VERSION>
+</sfoxml>

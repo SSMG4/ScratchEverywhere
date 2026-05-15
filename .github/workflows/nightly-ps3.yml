@@ -1,0 +1,58 @@
+name: PS3 Nightly Build
+
+on:
+  push:
+    paths:
+      - CMakeLists.txt
+      - cmake/platforms/ps3.cmake
+      - cmake/toolchains/ps3.cmake
+      - cmake/renderers/sdl2.cmake
+      - cmake/windowing/sdl2.cmake
+      - cmake/audio/sdl2.cmake
+      - cmake/deps/**
+      - source/runtime/**
+      - source/renderers/sdl2/**
+      - source/*.cpp
+      - source/*.hpp
+      - source/menus/**
+      - source/platforms/ps3/**
+      - source/audio/sdl2/**
+      - gfx/ps3/**
+      - gfx/menu/**
+      - include/**
+      - .github/workflows/nightly-ps3.yml
+      - docker/Dockerfile.ps3
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create romfs directory
+        run: mkdir -p romfs
+
+      - name: Build and Export
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile.ps3
+          target: exporter
+          outputs: type=local,dest=.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Upload Artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Scratch Everywhere! PS3 Nightly
+          path: scratch-ps3.pkg

@@ -1,0 +1,235 @@
+FROM ubuntu:22.04 AS toolchain_builder
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    autoconf \
+    automake \
+    bison \
+    build-essential \
+    cmake \
+    curl \
+    flex \
+    g++ \
+    gcc \
+    git \
+    libelf-dev \
+    libgmp-dev \
+    libisl-dev \
+    libmpc-dev \
+    libmpfr-dev \
+    libtool \
+    libtexinfo-dev \
+    libzstd-dev \
+    make \
+    pkg-config \
+    python3 \
+    python3-pip \
+    texinfo \
+    wget \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PS3DEV=/opt/ps3dev
+ENV PSL1GHT=$PS3DEV
+ENV PATH=$PS3DEV/ppu/bin:$PS3DEV/spu/bin:$PS3DEV/host/bin:$PATH
+
+RUN mkdir -p $PS3DEV/ppu $PS3DEV/spu $PS3DEV/host/bin
+
+ENV TARGET_PPU=powerpc64-ps3-elf
+ENV TARGET_SPU=spu-elf
+ENV BINUTILS_VER=2.40
+ENV GCC_VER=13.2.0
+ENV NEWLIB_VER=4.3.0.20230120
+
+WORKDIR /build
+
+RUN wget -q https://ftp.gnu.org/gnu/binutils/binutils-${BINUTILS_VER}.tar.xz \
+    && tar xf binutils-${BINUTILS_VER}.tar.xz
+
+RUN mkdir -p binutils-ppu-build && cd binutils-ppu-build \
+    && ../binutils-${BINUTILS_VER}/configure \
+        --prefix=$PS3DEV/ppu \
+        --target=$TARGET_PPU \
+        --disable-nls \
+        --disable-shared \
+        --disable-multilib \
+        --disable-debug \
+        --with-float=hard \
+    && make -j$(nproc) \
+    && make install
+
+RUN mkdir -p binutils-spu-build && cd binutils-spu-build \
+    && ../binutils-${BINUTILS_VER}/configure \
+        --prefix=$PS3DEV/spu \
+        --target=$TARGET_SPU \
+        --disable-nls \
+        --disable-shared \
+        --disable-multilib \
+        --disable-debug \
+    && make -j$(nproc) \
+    && make install
+
+RUN wget -q https://ftp.gnu.org/gnu/gcc/gcc-${GCC_VER}/gcc-${GCC_VER}.tar.xz \
+    && tar xf gcc-${GCC_VER}.tar.xz
+
+RUN wget -q https://sourceware.org/pub/newlib/newlib-${NEWLIB_VER}.tar.gz \
+    && tar xf newlib-${NEWLIB_VER}.tar.gz \
+    && ln -sf /build/newlib-${NEWLIB_VER}/newlib /build/gcc-${GCC_VER}/newlib \
+    && ln -sf /build/newlib-${NEWLIB_VER}/libgloss /build/gcc-${GCC_VER}/libgloss
+
+RUN mkdir -p gcc-ppu-stage1-build && cd gcc-ppu-stage1-build \
+    && ../gcc-${GCC_VER}/configure \
+        --prefix=$PS3DEV/ppu \
+        --target=$TARGET_PPU \
+        --with-newlib \
+        --with-headers=/build/newlib-${NEWLIB_VER}/newlib/libc/include \
+        --enable-languages=c,c++ \
+        --disable-nls \
+        --disable-shared \
+        --disable-multilib \
+        --enable-threads=single \
+        --disable-libsanitizer \
+        --disable-libquadmath \
+        --disable-libgomp \
+        --disable-libssp \
+        --enable-checking=release \
+        --with-float=hard \
+    && make -j$(nproc) all-gcc \
+    && make install-gcc
+
+RUN mkdir -p newlib-ppu-build && cd newlib-ppu-build \
+    && ../newlib-${NEWLIB_VER}/configure \
+        --prefix=$PS3DEV/ppu \
+        --target=$TARGET_PPU \
+        --disable-newlib-supplied-syscalls \
+        --enable-newlib-io-long-long \
+        --enable-newlib-register-fini \
+    && make -j$(nproc) \
+    && make install
+
+RUN cd gcc-ppu-stage1-build \
+    && make -j$(nproc) all-target-libgcc all-target-libstdc++-v3 \
+    && make install-target-libgcc install-target-libstdc++-v3
+
+RUN mkdir -p gcc-spu-build && cd gcc-spu-build \
+    && ../gcc-${GCC_VER}/configure \
+        --prefix=$PS3DEV/spu \
+        --target=$TARGET_SPU \
+        --with-newlib \
+        --enable-languages=c,c++ \
+        --disable-nls \
+        --disable-shared \
+        --disable-multilib \
+        --enable-threads=single \
+        --disable-libsanitizer \
+        --disable-libquadmath \
+        --disable-libgomp \
+        --disable-libssp \
+    && make -j$(nproc) \
+    && make install
+
+RUN for tool in gcc g++ ar as ld nm objcopy objdump ranlib strip size addr2line; do \
+        src="$PS3DEV/ppu/bin/$TARGET_PPU-${tool}"; \
+        dst="$PS3DEV/ppu/bin/ppu-lv2-${tool}"; \
+        [ -f "$src" ] && ln -sf "$src" "$dst" || true; \
+    done
+
+FROM toolchain_builder AS psl1ght_builder
+
+RUN git clone --depth=1 https://github.com/ps3dev/PSL1GHT.git /build/PSL1GHT
+
+RUN cd /build/PSL1GHT \
+    && make -j$(nproc) \
+        CROSS="$PS3DEV/ppu/bin/ppu-lv2-" \
+        PS3DEV=$PS3DEV \
+        PSL1GHT=$PSL1GHT \
+    && make install \
+        CROSS="$PS3DEV/ppu/bin/ppu-lv2-" \
+        PS3DEV=$PS3DEV \
+        PSL1GHT=$PSL1GHT
+
+FROM psl1ght_builder AS sdl_builder
+
+RUN git clone --depth=1 https://github.com/sergiou87/SDL2_PSL1GHT.git /build/SDL2_PS3
+
+RUN cd /build/SDL2_PS3 \
+    && cmake -S . -B build \
+        -DCMAKE_C_COMPILER=$PS3DEV/ppu/bin/ppu-lv2-gcc \
+        -DCMAKE_CXX_COMPILER=$PS3DEV/ppu/bin/ppu-lv2-g++ \
+        -DCMAKE_AR=$PS3DEV/ppu/bin/ppu-lv2-ar \
+        -DCMAKE_RANLIB=$PS3DEV/ppu/bin/ppu-lv2-ranlib \
+        -DCMAKE_STRIP=$PS3DEV/ppu/bin/ppu-lv2-strip \
+        -DCMAKE_SYSTEM_NAME=Generic \
+        -DCMAKE_SYSTEM_PROCESSOR=powerpc64 \
+        -DCMAKE_INSTALL_PREFIX=$PS3DEV/ppu \
+        -DSDL_SHARED=OFF \
+        -DSDL_STATIC=ON \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DSDL_TEST=OFF \
+        -DSDL_HAPTIC=OFF \
+    && cmake --build build -j$(nproc) \
+    && cmake --install build
+
+RUN wget -q https://download.savannah.gnu.org/releases/freetype/freetype-2.13.2.tar.xz \
+    && tar xf freetype-2.13.2.tar.xz \
+    && mkdir -p freetype-build \
+    && cd freetype-build \
+    && ../freetype-2.13.2/configure \
+        --host=$TARGET_PPU \
+        --prefix=$PS3DEV/ppu \
+        --without-bzip2 \
+        --without-png \
+        --without-harfbuzz \
+        --without-brotli \
+        --enable-static \
+        --disable-shared \
+        CC=$PS3DEV/ppu/bin/ppu-lv2-gcc \
+        CXX=$PS3DEV/ppu/bin/ppu-lv2-g++ \
+        AR=$PS3DEV/ppu/bin/ppu-lv2-ar \
+        RANLIB=$PS3DEV/ppu/bin/ppu-lv2-ranlib \
+    && make -j$(nproc) \
+    && make install
+
+RUN wget -q https://github.com/libsdl-org/SDL_ttf/releases/download/release-2.22.0/SDL2_ttf-2.22.0.tar.gz \
+    && tar xf SDL2_ttf-2.22.0.tar.gz \
+    && mkdir -p sdl2ttf-build \
+    && cd sdl2ttf-build \
+    && ../SDL2_ttf-2.22.0/configure \
+        --host=$TARGET_PPU \
+        --prefix=$PS3DEV/ppu \
+        --enable-static \
+        --disable-shared \
+        --disable-sdltest \
+        CC=$PS3DEV/ppu/bin/ppu-lv2-gcc \
+        CXX=$PS3DEV/ppu/bin/ppu-lv2-g++ \
+        AR=$PS3DEV/ppu/bin/ppu-lv2-ar \
+        RANLIB=$PS3DEV/ppu/bin/ppu-lv2-ranlib \
+        SDL_CFLAGS="-I$PS3DEV/ppu/include/SDL2" \
+        SDL_LIBS="-L$PS3DEV/ppu/lib -lSDL2" \
+        FREETYPE_CFLAGS="-I$PS3DEV/ppu/include/freetype2" \
+        FREETYPE_LIBS="-L$PS3DEV/ppu/lib -lfreetype" \
+    && make -j$(nproc) \
+    && make install
+
+FROM sdl_builder AS main_builder
+
+ENV PS3DEV=/opt/ps3dev
+ENV PSL1GHT=$PS3DEV
+ENV PATH=$PS3DEV/ppu/bin:$PS3DEV/spu/bin:$PS3DEV/host/bin:$PATH
+ENV PKG_CONFIG_LIBDIR=$PS3DEV/ppu/lib/pkgconfig
+ENV PKG_CONFIG_PATH=
+
+WORKDIR /app
+
+COPY . .
+
+RUN cmake \
+    -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/ps3.cmake \
+    -DCMAKE_BUILD_TYPE=Release \
+    -B build-ps3 \
+    && cmake --build build-ps3 -j$(nproc) \
+    && cmake --build build-ps3 --target scratch-everywhere_pkg
+
+FROM scratch AS exporter
+
+COPY --from=main_builder /app/build-ps3/scratch-ps3.pkg /
