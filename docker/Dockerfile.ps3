@@ -76,6 +76,37 @@ RUN wget -q https://sourceware.org/pub/newlib/newlib-${NEWLIB_VER}.tar.gz \
     && ln -sf /build/newlib-${NEWLIB_VER}/newlib /build/gcc-${GCC_VER}/newlib \
     && ln -sf /build/newlib-${NEWLIB_VER}/libgloss /build/gcc-${GCC_VER}/libgloss
 
+RUN python3 << 'PATCH_EOF'
+import sys
+path = '/build/gcc-' + '13.2.0' + '/gcc/config.gcc'
+with open(path, 'r') as f:
+    content = f.read()
+if 'powerpc64-*-elf*)' in content:
+    print('already patched')
+    sys.exit(0)
+new_case = (
+    'powerpc64-*-elf*)\n'
+    '\tcpu_type=rs6000\n'
+    '\ttm_file="rs6000/biarch64.h ${tm_file} elfos.h newlib-stdint.h"\n'
+    '\ttmake_file="${tmake_file} rs6000/t-fprules rs6000/t-ppcgas rs6000/t-ppccomm"\n'
+    '\t;;\n'
+)
+anchors = [
+    'powerpcle-*-elf*)', 'powerpcle-eabi*)',
+    'powerpc-*-eabi*)', 'powerpc-eabi*)',
+    'powerpc-*-elf*)', 'ppc-elf*)',
+]
+for anchor in anchors:
+    if anchor in content:
+        content = content.replace(anchor, new_case + anchor, 1)
+        with open(path, 'w') as f:
+            f.write(content)
+        print('Patched before: ' + anchor)
+        sys.exit(0)
+print('ERROR: anchor not found', file=sys.stderr)
+sys.exit(1)
+PATCH_EOF
+
 RUN mkdir -p gcc-ppu-stage1-build && cd gcc-ppu-stage1-build \
     && ../gcc-${GCC_VER}/configure \
         --prefix=$PS3DEV/ppu \
