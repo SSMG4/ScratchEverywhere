@@ -78,16 +78,34 @@ RUN wget -q https://sourceware.org/pub/newlib/newlib-${NEWLIB_VER}.tar.gz \
 
 RUN python3 << 'PATCH_EOF'
 import sys
-path = '/build/gcc-' + '13.2.0' + '/gcc/config.gcc'
-with open(path, 'r') as f:
+gcc_ver = '13.2.0'
+config_path = f'/build/gcc-{gcc_ver}/gcc/config.gcc'
+header_path = f'/build/gcc-{gcc_ver}/gcc/config/rs6000/ps3elf.h'
+
+ps3elf_h = """\
+#undef  DEFAULT_ABI
+#define DEFAULT_ABI ABI_AIX
+
+#undef  TARGET_OS_CPP_BUILTINS
+#define TARGET_OS_CPP_BUILTINS() do { } while (0)
+
+#undef  LONG_DOUBLE_TYPE_SIZE
+#define LONG_DOUBLE_TYPE_SIZE 128
+"""
+
+with open(header_path, 'w') as f:
+    f.write(ps3elf_h)
+print('Wrote rs6000/ps3elf.h')
+
+with open(config_path, 'r') as f:
     content = f.read()
 if 'powerpc64-*-elf*)' in content:
-    print('already patched')
+    print('config.gcc already patched')
     sys.exit(0)
 new_case = (
     'powerpc64-*-elf*)\n'
     '\tcpu_type=rs6000\n'
-    '\ttm_file="rs6000/biarch64.h ${tm_file} elfos.h newlib-stdint.h rs6000/sysv4.h rs6000/linux64.h"\n'
+    '\ttm_file="rs6000/biarch64.h ${tm_file} elfos.h newlib-stdint.h rs6000/sysv4.h rs6000/ps3elf.h"\n'
     '\textra_options="${extra_options} rs6000/sysv4.opt rs6000/linux64.opt"\n'
     '\ttmake_file="${tmake_file} rs6000/t-fprules rs6000/t-ppcgas rs6000/t-ppccomm"\n'
     '\t;;\n'
@@ -100,9 +118,9 @@ anchors = [
 for anchor in anchors:
     if anchor in content:
         content = content.replace(anchor, new_case + anchor, 1)
-        with open(path, 'w') as f:
+        with open(config_path, 'w') as f:
             f.write(content)
-        print('Patched before: ' + anchor)
+        print(f'Patched config.gcc before: {anchor}')
         sys.exit(0)
 print('ERROR: anchor not found', file=sys.stderr)
 sys.exit(1)
